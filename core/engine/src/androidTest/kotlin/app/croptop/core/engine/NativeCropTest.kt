@@ -64,6 +64,28 @@ class NativeCropTest {
     }
 
     @Test
+    fun cropClearsPreviousSelectionInsteadOfRejectingGeometryChange() {
+        val engine = NativeEngine()
+        val document = engine.newDocument(
+            NewDocumentSpec(name = "Crop after deselect", size = DocSize(5, 4), background = BackgroundContents.TRANSPARENT),
+        ) as NativeDocument
+        try {
+            assertTrue(document.select(SelectionShape.Rect(DocRectF(0f, 0f, 3f, 3f))) is CommandResult.Accepted)
+            assertTrue(document.deselect() is CommandResult.Accepted)
+
+            val result = document.crop(DocRectF(1f, 1f, 4f, 3f))
+
+            assertTrue("crop result: $result", result is CommandResult.Accepted)
+            assertEquals(DocSize(3, 2), document.info.value.size)
+            assertEquals(SelectionInfo.None, document.selection.value)
+            assertTrue("crop discards the old reselect state", document.reselect() is CommandResult.Rejected)
+        } finally {
+            document.close()
+            engine.close()
+        }
+    }
+
+    @Test
     fun straightenCropRotatesAboutCropCenterAndKeepsOnlyInteriorPixels() {
         val engine = NativeEngine()
         val document = engine.newDocument(

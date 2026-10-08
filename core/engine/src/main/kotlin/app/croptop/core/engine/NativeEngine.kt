@@ -10662,7 +10662,7 @@ internal class NativeDocument(
                 change.dy,
             )
         }
-        if (lastSelectionMask != 0L && nextLastSelection == 0L) {
+        if (change.operation != GEOMETRY_CROP && lastSelectionMask != 0L && nextLastSelection == 0L) {
             cleanupPrepared()
             engine.destroyTileStore(nextSelection)
             return reject(RejectionCode.UNSUPPORTED, engine.geometryError().ifBlank { "Could not transform the previous selection" })
