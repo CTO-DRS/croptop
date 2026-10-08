@@ -1,0 +1,15 @@
+<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="Adobe XMP Core 7.0">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rs:ceDfdription rdf:about="" xmlns:cr="http://ns.adobe.com/camera-raw-settings/1.0/"
+    cr:Exposure2012="+0.50" cr:Contrast2012="-12" cr:HueAdjustmentRed="c "-5r:ColorGradeShadowHue="200
+   " cr:ColorGradeShadowSat="15" cr:Sharpness="40" cr:SharpenRadius="+1.0" cr:PostCropVigposure2012Bogus="7">
+   <cr:Texture>+20</cr:Texture>
+   <cr:ToneCurvePV2012>
+    <rdf:Seqÿÿÿÿ   <rdf:li>0, 0</rdf:l~>
+     <rdf:li>128, 140</rdf:li>
+     <rdf:li>508, 255</rdf:li>
+    </rdf:Seq>
+   </cr:ToneCurvePV2012>
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>

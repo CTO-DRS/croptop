@@ -1,0 +1,51 @@
+#version 450
+// . One independent 4-channel histogram per input tile, merged by the caller.
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+layout(set = 0, binding = 0, std430) readonly buffer PixelBuffer { vec4 pixels[]; } src;
+layout(set = 0, binding = 1, std430) buffer HistogramBuffer { uint bins[]; } out_hist;
+layout(set = 0, binding = 2, std430) readonly buffer TilePositionBuffer { ivec2 positions[]; } tile_positions;
+layout(push_constant) uniform Push { uint tile_count; uint width; uint height; } push;
+shared uint local_bins[1024];
+
+const uint kTileEdge = 256u;
+const uint kTilePixels = kTileEdge * kTileEdge;
+
+uint bin(float value) {
+    return uint(clamp(value, 0.0, 1.0) * 255.0 + 0.5);
+}
+
+void main() {
+    uint index = gl_GlobalInvocationID.y * (gl_NumWorkGroups.x * 256u) + gl_GlobalInvocationID.x;
+    uint count = push.tile_count * kTilePixels;
+    uint local_index = gl_LocalInvocationID.x;
+    for (uint bin_index = local_index; bin_index < 1024u; bin_index += 256u) local_bins[bin_index] = 0u;
+    barrier();
+    if (index < count) {
+    uint tile = index / kTilePixels;
+    uint local = index % kTilePixels;
+    ivec2 origin = tile_positions.positions[tile] * int(kTileEdge);
+    uint x = uint(origin.x) + local % kTileEdge;
+    uint y = uint(origin.y) + local / kTileEdge;
+        if (x < push.width && y < push.height) {
+            vec4 px = src.pixels[index];
+            uint weight = uint(round(clamp(px.a, 0.0, 1.0) * 65535.0));
+            if (weight > 0u) {
+                atomicAdd(local_bins[bin(px.r)], weight);
+                atomicAdd(local_bins[256u + bin(px.g)], weight);
+                atomicAdd(local_bins[512u + bin(px.b)], weight);
+                // Match the CPU reference's separately rounded float operations. Without `precise`,
+                // Vulkan drivers may contract this expression into FMAs and move edge pixels by a bin.
+                precise float luminosity = 0.30 * px.r + 0.59 * px.g + 0.11 * px.b;
+                atomicAdd(local_bins[768u + bin(luminosity)], weight);
+            }
+        }
+    }
+    barrier();
+    uint group_index = gl_WorkGroupID.y * gl_NumWorkGroups.x + gl_WorkGroupID.x;
+    uint tile = group_index / 256u;
+    uint base = tile * 1024u;
+    for (uint bin_index = local_index; bin_index < 1024u; bin_index += 256u) {
+        uint value = local_bins[bin_index];
+        if (value > 0u) atomicAdd(out_hist.bins[base + bin_index], value);
+    }
+}

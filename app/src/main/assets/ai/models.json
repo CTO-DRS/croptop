@@ -1,0 +1,203 @@
+{
+  "schema": 1,
+  "models": [
+    {
+      "id": "magic-touch",
+      "version": 1,
+      "task": "SEGMENT_PROMPT",
+      "displayName": "Object select (click)",
+      "files": [
+        {
+          "name": "magic_touch.tflite",
+          "sha256": "e24338a717c1b7ad8d159666677ef400babb7f33b8ad60c4d96db4ecf694cd25",
+          "sizeBytes": 6227884,
+          "url": "https://storage.googleapis.com/mediapipe-models/interactive_segmenter/magic_touch/float32/1/magic_touch.tflite"
+        }
+      ],
+      "license": {
+        "spdx": "Apache-2.0",
+        "commercialUse": true,
+        "attribution": "MediaPipe MagicTouch interactive segmenter, Google, licensed under the Apache License 2.0",
+        "sourceUrl": "https://storage.googleapis.com/mediapipe-assets/Model%20Card%20MagicTouch.pdf"
+      },
+      "inputSize": 512,
+      "notes": "Click-driven object segmentation: RGB plus a click hint channel in, object probability out. Model card states Apache-2.0."
+    },
+    {
+      "id": "deeplab-v3",
+      "version": 1,
+      "task": "SEGMENT_SUBJECT",
+      "displayName": "Subject selection",
+      "files": [
+        {
+          "name": "deeplab_v3.tflite",
+          "sha256": "ff36e24d40547fe9e645e2f4e8745d1876d6e38b332d39a82f0bf0f5d1d561b3",
+          "sizeBytes": 2780176,
+          "url": "https://storage.googleapis.com/mediapipe-models/image_segmenter/deeplab_v3/float32/1/deeplab_v3.tflite"
+        }
+      ],
+      "license": {
+        "spdx": "Apache-2.0",
+        "commercialUse": true,
+        "attribution": "DeepLab v3 (MediaPipe image segmenter), Google, licensed under the Apache License 2.0",
+        "sourceUrl": "https://ai.google.dev/edge/mediapipe/solutions/vision/image_segmenter"
+      },
+      "inputSize": 257,
+      "notes": "21 PASCAL VOC classes; everything but background counts as subject."
+    },
+    {
+      "id": "isnet-general",
+      "version": 1,
+      "task": "MATTING",
+      "displayName": "Background removal (high quality)",
+      "files": [
+        {
+          "name": "dis.tflite",
+          "sha256": "0c3c93b6a2a65e7c69137ec82596944e6bfb97d982c75bab03acb0738dbaa087",
+          "sizeBytes": 176223448,
+          "url": "https://huggingface.co/litert-community/DIS-ISNet-LiteRT/resolve/1b966dbe2f33bd5ca1299cf94fbab59265210b6b/dis.tflite"
+        }
+      ],
+      "license": {
+        "spdx": "Apache-2.0",
+        "commercialUse": true,
+        "attribution": "DIS IS-Net general-use (xuebinqin/DIS), LiteRT conversion by litert-community, licensed under the Apache License 2.0",
+        "sourceUrl": "https://huggingface.co/litert-community/DIS-ISNet-LiteRT"
+      },
+      "inputSize": 1024,
+      "notes": "High-precision cut-out of the main object: [1,3,1024,1024] NCHW RGB x/255-0.5 in, [1,1,1024,1024] out (a sigmoid applied twice; the decoder takes the logit back)."
+    },
+    {
+      "id": "midas-small",
+      "version": 1,
+      "task": "DEPTH",
+      "displayName": "Depth for Lens Blur",
+      "files": [
+        {
+          "name": "midas_v2_1_small.tflite",
+          "sha256": "93d871071edff1218973ce25ee27ce95ccd20450c70a55e1b89efa3f5a772cdd",
+          "sizeBytes": 66338288,
+          "url": "https://tfhub.dev/intel/lite-model/midas/v2_1_small/1/lite/1?lite-format=tflite"
+        }
+      ],
+      "license": {
+        "spdx": "MIT",
+        "commercialUse": true,
+        "attribution": "MiDaS v2.1 small, Intel ISL, MIT License",
+        "sourceUrl": "https://github.com/isl-org/MiDaS"
+      },
+      "inputSize": 256,
+      "notes": "Relative inverse depth from one photo. The training-data terms were not reviewed here; see core/ai/MODELS.md."
+    },
+    {
+      "id": "lama-dilated",
+      "version": 1,
+      "task": "INPAINT",
+      "displayName": "Remove objects (fill)",
+      "files": [
+        {
+          "name": "lama_dilated.tflite",
+          "sha256": "a2ac8ed174be1233e4e518c8ef57fb943ea97162696dcd2d428c056280efe583",
+          "sizeBytes": 182648392,
+          "url": "https://huggingface.co/mlboydaisuke/LaMa-Dilated-LiteRT/resolve/main/lama_dilated.tflite"
+        }
+      ],
+      "license": {
+        "spdx": "Apache-2.0",
+        "commercialUse": true,
+        "attribution": "LaMa (Samsung Research, Apache-2.0), LiteRT conversion of the dilated variant via Qualcomm AI Hub tooling by mlboydaisuke",
+        "sourceUrl": "https://huggingface.co/mlboydaisuke/LaMa-Dilated-LiteRT"
+      },
+      "inputSize": 512,
+      "notes": "Image [1,512,512,3] in 0..1 plus mask [1,512,512,1] (1 = fill); returns the filled image. The page states Apache-2.0 for model and weights; the conversion tool's own terms were not reviewed here, see core/ai/MODELS.md."
+    },
+    {
+      "id": "nafnet-sidd",
+      "version": 1,
+      "task": "DENOISE",
+      "displayName": "Denoise",
+      "files": [
+        {
+          "name": "nafnet_sidd_width32_fp16.tflite",
+          "sha256": "f8fbaa422411683c53e802cf7cc7cf9be0a0de00886ad4af057232e26b172a0c",
+          "sizeBytes": 62454048,
+          "url": "https://huggingface.co/litert-community/NAFNet-SIDD-width32-LiteRT/resolve/main/nafnet_sidd_width32_fp16.tflite"
+        }
+      ],
+      "license": {
+        "spdx": "MIT",
+        "commercialUse": true,
+        "attribution": "NAFNet (megvii-research, MIT), SIDD-width32 LiteRT conversion by litert-community",
+        "sourceUrl": "https://huggingface.co/litert-community/NAFNet-SIDD-width32-LiteRT"
+      },
+      "inputSize": 256,
+      "notes": "Real-image denoising, fixed 256x256 NCHW tiles (RGB 0..1) in and out; the picture is walked in overlapping tiles. The SIDD training data is research-use; see core/ai/MODELS.md."
+    },
+    {
+      "id": "realesr-general-x4v3",
+      "version": 1,
+      "task": "UPSCALE",
+      "displayName": "Super resolution",
+      "files": [
+        {
+          "name": "realesr_general_x4v3.tflite",
+          "sha256": "6d597b46d812ada42bdde641ec6e78c0ef0b78ff5a825fcfd74b9a1b3bcbe9a4",
+          "sizeBytes": 3549456,
+          "url": "https://huggingface.co/litert-community/real-esrgan-x4v3-litert/resolve/main/realesr_general_x4v3.tflite"
+        }
+      ],
+      "license": {
+        "spdx": "BSD-3-Clause",
+        "commercialUse": true,
+        "attribution": "Real-ESRGAN realesr-general-x4v3 (Xintao Wang et al., BSD-3-Clause), LiteRT conversion by litert-community",
+        "sourceUrl": "https://huggingface.co/litert-community/real-esrgan-x4v3-litert"
+      },
+      "inputSize": 128,
+      "notes": "x4 real-world super resolution: [1,128,128,3] NHWC in, [1,3,512,512] NCHW out, 0..1. x2 averages the x4 output."
+    },
+    {
+      "id": "sam2-encoder",
+      "version": 1,
+      "task": "SEGMENT_PROMPT",
+      "displayName": "Object select, precise (picture analysis)",
+      "files": [
+        {
+          "name": "sam2_tiny_image_encoder_v2_fp16.tflite",
+          "sha256": "9f87693052c7c9bee2271f86d947420d7409ef0c2bec36c1885335afab90f6be",
+          "sizeBytes": 80278528,
+          "url": "https://huggingface.co/litert-community/SAM2.1-Hiera-Tiny-Image-Encoder/resolve/main/sam2_tiny_image_encoder_v2_fp16.tflite"
+        }
+      ],
+      "license": {
+        "spdx": "Apache-2.0",
+        "commercialUse": true,
+        "attribution": "SAM 2.1 Hiera-Tiny (Meta, Apache-2.0), LiteRT conversion by litert-community",
+        "sourceUrl": "https://huggingface.co/litert-community/SAM2.1-Hiera-Tiny-Image-Encoder"
+      },
+      "inputSize": 1024,
+      "notes": "Optional upgrade for Object Select: analyses the picture once (features are kept per document); pairs with sam2-decoder. SA-1B/SA-V training data are Meta's licensed sets."
+    },
+    {
+      "id": "sam2-decoder",
+      "version": 1,
+      "task": "SEGMENT_PROMPT",
+      "displayName": "Object select, precise (per click)",
+      "files": [
+        {
+          "name": "sam2_tiny_mask_decoder_v2_fp16.tflite",
+          "sha256": "80d668b19156c548f31a8c8eb3cc1da2127de36e24e96ef923467a1e54c99e76",
+          "sizeBytes": 16968160,
+          "url": "https://huggingface.co/litert-community/SAM2.1-Hiera-Tiny-Mask-Decoder/resolve/main/sam2_tiny_mask_decoder_v2_fp16.tflite"
+        }
+      ],
+      "license": {
+        "spdx": "Apache-2.0",
+        "commercialUse": true,
+        "attribution": "SAM 2.1 Hiera-Tiny mask decoder (Meta, Apache-2.0), LiteRT conversion by litert-community",
+        "sourceUrl": "https://huggingface.co/litert-community/SAM2.1-Hiera-Tiny-Mask-Decoder"
+      },
+      "inputSize": 256,
+      "notes": "v2 build: keeps the batch dimension in attention (the first build gave wrong masks on some mobile GPUs). The prompt-encoder constants ship inside the app."
+    }
+  ]
+}

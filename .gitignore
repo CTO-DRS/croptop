@@ -1,0 +1,17 @@
+.gradle/
+build/
+build-*/
+!build-logic/
+/local.properties
+.idea/
+*.iml
+.DS_Store
+.cxx/
+.kotlin/
+captures/
+/app/release/
+**/src/test/snapshots/*_compare.png
+**/src/test/snapshots/*_actual.png
+
+# IDE / Kotlin LSP output
+bin/

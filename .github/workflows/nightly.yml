@@ -1,0 +1,59 @@
+# nightly: fake app and native engine instrumentation on x86_64 emulators (API 31 + desktop 37).
+name: Nightly
+
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+jobs:
+  decoder-fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-android
+        with:
+          native: "true"
+      - name: Fuzz native JPEG, PNG and BMP decoders
+        env:
+          CROPTOP_FUZZ_SECONDS: "60"
+        run: bash core/engine/src/main/cpp/run_decoder_fuzzer.sh
+      - name: Fuzz native .croptop archives
+        env:
+          CROPTOP_FORMAT_FUZZ_SECONDS: "60"
+        run: bash core/engine/src/main/cpp/run_croptop_format_fuzzer.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: decoder-fuzz-corpus
+          path: /tmp/croptop-decoder-fuzz/fuzz_corpus
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: croptop-format-fuzz-corpus
+          path: /tmp/croptop-format-fuzzer-co3/corpus
+          if-no-files-found: ignore
+
+  instrumented:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [31, 37]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-android
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          target: ${{ matrix.api == 37 && 'android-desktop' || 'google_apis' }}
+          arch: x86_64
+          profile: ${{ matrix.api == 37 && 'medium_desktop' || 'pixel_tablet' }}
+          script: ./gradlew :app:connectedFakeDebugAndroidTest :core:engine:connectedDebugAndroidTest -Pcroptop.abi=x86_64

@@ -1,0 +1,24 @@
+name: Setup Android
+description: JDK 17, pinned Android SDK packages (licenses accepted), Gradle cache.
+inputs:
+  native:
+    description: Also install NDK + CMake
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: "17"
+    - uses: android-actions/setup-android@v3
+      with:
+        packages: ""
+    - name: Install SDK packages
+      shell: bash
+      run: |
+        yes | sdkmanager --licenses > /dev/null
+        pkgs="$ANDROID_PLATFORM $ANDROID_BUILD_TOOLS platform-tools"
+        if [ "${{ inputs.native }}" = "true" ]; then pkgs="$pkgs $ANDROID_NDK $ANDROID_CMAKE"; fi
+        sdkmanager $pkgs > /dev/null
+    - uses: gradle/actions/setup-gradle@v4

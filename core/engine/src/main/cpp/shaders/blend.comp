@@ -1,0 +1,156 @@
+#version 450
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+layout(set = 0, binding = 0, std430) readonly buffer BackdropBuffer { vec4 pixels[]; } backdrop;
+layout(set = 0, binding = 1, std430) readonly buffer SourceBuffer { vec4 pixels[]; } source;
+layout(set = 0, binding = 2, std430) writeonly buffer OutputBuffer { vec4 pixels[]; } outputImage;
+struct LayerParameters { uint mode; float opacity; uint dissolveSeed; uint reserved; };
+layout(set = 0, binding = 3, std430) readonly buffer LayerParameterBuffer { LayerParameters values[]; } layerParameters;
+layout(push_constant) uniform Parameters {
+    uint width;
+    uint height;
+    uint layerCount;
+    uint linearLight;
+    uint originX;
+    uint originY;
+    uint coordinateScale;
+    uint precisionBits;
+} params;
+
+float luminance(vec3 c) { return dot(c, vec3(0.3, 0.59, 0.11)); }
+float saturation(vec3 c) { return max(max(c.r, c.g), c.b) - min(min(c.r, c.g), c.b); }
+
+vec3 clipColor(vec3 c) {
+    float l = luminance(c);
+    float n = min(min(c.r, c.g), c.b);
+    float x = max(max(c.r, c.g), c.b);
+    if (n < 0.0) c = vec3(l) + (c - vec3(l)) * (l / (l - n));
+    if (x > 1.0) c = vec3(l) + (c - vec3(l)) * ((1.0 - l) / (x - l));
+    return c;
+}
+
+vec3 setLum(vec3 c, float l) { return clipColor(c + vec3(l - luminance(c))); }
+
+vec3 setSat(vec3 c, float s) {
+    int lo = 0, mid = 1, hi = 2;
+    if (c[lo] > c[mid]) { int t = lo; lo = mid; mid = t; }
+    if (c[mid] > c[hi]) { int t = mid; mid = hi; hi = t; }
+    if (c[lo] > c[mid]) { int t = lo; lo = mid; mid = t; }
+    if (c[hi] > c[lo]) {
+        c[mid] = (c[mid] - c[lo]) * s / (c[hi] - c[lo]);
+        c[hi] = s;
+    } else {
+        c[mid] = 0.0;
+        c[hi] = 0.0;
+    }
+    c[lo] = 0.0;
+    return c;
+}
+
+float blendChannel(float b, float s, uint mode) {
+    if (mode == 0u || mode == 1u) return s;
+    if (mode == 2u) return min(b, s);
+    if (mode == 3u) return b * s;
+    if (mode == 4u) return s <= 0.0 ? 0.0 : 1.0 - min(1.0, (1.0 - b) / s);
+    if (mode == 5u) return max(0.0, b + s - 1.0);
+    if (mode == 7u) return max(b, s);
+    if (mode == 8u) return b + s - b * s;
+    if (mode == 9u) return s >= 1.0 ? 1.0 : min(1.0, b / (1.0 - s));
+    if (mode == 10u) return min(1.0, b + s);
+    if (mode == 12u) return b <= 0.5 ? 2.0 * b * s : 1.0 - 2.0 * (1.0 - b) * (1.0 - s);
+    if (mode == 13u) {
+        if (s <= 0.5) return b - (1.0 - 2.0 * s) * b * (1.0 - b);
+        float d = b <= 0.25 ? ((16.0 * b - 12.0) * b + 4.0) * b : sqrt(b);
+        return b + (2.0 * s - 1.0) * (d - b);
+    }
+    if (mode == 14u) return s <= 0.5 ? 2.0 * b * s : 1.0 - 2.0 * (1.0 - b) * (1.0 - s);
+    if (mode == 15u) {
+        if (s <= 0.5) return s <= 0.0 ? 0.0 : 1.0 - min(1.0, (1.0 - b) / (2.0 * s));
+        return s >= 1.0 ? 1.0 : min(1.0, b / (2.0 * (1.0 - s)));
+    }
+    if (mode == 16u) return clamp(b + 2.0 * s - 1.0, 0.0, 1.0);
+    if (mode == 17u) return s <= 0.5 ? min(b, 2.0 * s) : max(b, 2.0 * s - 1.0);
+    if (mode == 18u) return b + 2.0 * s - 1.0 < 0.5 ? 0.0 : 1.0;
+    if (mode == 19u) return abs(b - s);
+    if (mode == 20u) return b + s - 2.0 * b * s;
+    if (mode == 21u) return max(0.0, b - s);
+    if (mode == 22u) return s <= 0.0 ? 1.0 : min(1.0, b / s);
+    return s;
+}
+
+vec3 blendRgb(vec3 b, vec3 s, uint mode) {
+    if (mode == 6u) return luminance(s) < luminance(b) ? s : b;
+    if (mode == 11u) return luminance(s) > luminance(b) ? s : b;
+    if (mode == 23u) return setLum(setSat(s, saturation(b)), luminance(b));
+    if (mode == 24u) return setLum(setSat(b, saturation(s)), luminance(b));
+    if (mode == 25u) return setLum(s, luminance(b));
+    if (mode == 26u) return setLum(b, luminance(s));
+    return clamp(vec3(blendChannel(b.r, s.r, mode), blendChannel(b.g, s.g, mode),
+                      blendChannel(b.b, s.b, mode)), 0.0, 1.0);
+}
+
+float srgbToLinear(float c) { return c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4); }
+float linearToSrgb(float c) { return c <= 0.0031308 ? c * 12.92 : 1.055 * pow(c, 1.0 / 2.4) - 0.055; }
+
+uint hashPixel(uvec2 p, uint seed) {
+    uint value = p.x * 0x9e3779b9u ^ p.y * 0x85ebca6bu ^ seed;
+    value ^= value >> 16u;
+    value *= 0x7feb352du;
+    value ^= value >> 15u;
+    value *= 0x846ca68bu;
+    value ^= value >> 16u;
+    return value;
+}
+
+vec4 blendPixel(vec4 b, vec4 s, uvec2 xy, LayerParameters layer) {
+    float ab = clamp(b.a, 0.0, 1.0);
+    float as = clamp(s.a, 0.0, 1.0) * clamp(layer.opacity, 0.0, 1.0);
+    uint mode = layer.mode;
+    if (mode == 1u) {
+        float threshold = float(hashPixel(xy, layer.dissolveSeed)) / 4294967296.0;
+        if (threshold >= as) return b;
+        as = 1.0;
+        mode = 0u;
+    }
+    if (mode == 0u) {
+        vec3 bc = b.rgb;
+        vec3 sc = s.rgb;
+        if (params.linearLight != 0u) {
+            bc = vec3(srgbToLinear(bc.r), srgbToLinear(bc.g), srgbToLinear(bc.b));
+            sc = vec3(srgbToLinear(sc.r), srgbToLinear(sc.g), srgbToLinear(sc.b));
+        }
+        float ao = as + ab * (1.0 - as);
+        if (ao <= 0.0) return vec4(0.0);
+        vec3 rgb = ((1.0 - as) * ab * bc + as * sc) / ao;
+        if (params.linearLight != 0u) rgb = vec3(linearToSrgb(rgb.r), linearToSrgb(rgb.g), linearToSrgb(rgb.b));
+        return vec4(rgb, ao);
+    }
+    vec3 bc = clamp(b.rgb, 0.0, 1.0);
+    vec3 sc = clamp(s.rgb, 0.0, 1.0);
+    if (params.linearLight != 0u) {
+        bc = vec3(srgbToLinear(bc.r), srgbToLinear(bc.g), srgbToLinear(bc.b));
+        sc = vec3(srgbToLinear(sc.r), srgbToLinear(sc.g), srgbToLinear(sc.b));
+    }
+    vec3 mixed = blendRgb(bc, sc, mode);
+    float ao = as + ab * (1.0 - as);
+    if (ao <= 0.0) return vec4(0.0);
+    vec3 rgb = ((1.0 - as) * ab * bc + (1.0 - ab) * as * sc + ab * as * mixed) / ao;
+    if (params.linearLight != 0u) rgb = vec3(linearToSrgb(rgb.r), linearToSrgb(rgb.g), linearToSrgb(rgb.b));
+    return vec4(clamp(rgb, 0.0, 1.0), ao);
+}
+
+void main() {
+    uvec2 xy = gl_GlobalInvocationID.xy;
+    if (xy.x >= params.width || xy.y >= params.height) return;
+    uint index = xy.y * params.width + xy.x;
+    uint pixelCount = params.width * params.height;
+    vec4 result = backdrop.pixels[index];
+    for (uint layerIndex = 0u; layerIndex < params.layerCount; ++layerIndex) {
+        result = blendPixel(result, source.pixels[layerIndex * pixelCount + index],
+                            xy * params.coordinateScale + uvec2(params.originX, params.originY),
+                            layerParameters.values[layerIndex]);
+        if (params.precisionBits == 8u) result = floor(clamp(result, 0.0, 1.0) * 255.0 + 0.5) / 255.0;
+        else if (params.precisionBits == 16u) result = floor(clamp(result, 0.0, 1.0) * 65535.0 + 0.5) / 65535.0;
+        outputImage.pixels[layerIndex * pixelCount + index] = result;
+    }
+}

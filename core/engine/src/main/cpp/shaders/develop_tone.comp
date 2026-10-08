@@ -1,0 +1,111 @@
+#version 450
+// GPU port of the per-pixel pass of develop::applyTone (develop_tone.cpp, texture = 0): dehaze → exposure → local
+// highlights/shadows and clarity from the low-resolution guided-filter planes → contrast → whites/blacks → tone curves →
+// vibrance/saturation. The low-resolution stage runs on the CPU (develop::makeTonePlan) and arrives as `Planes` and `Params`.
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+layout(set = 0, binding = 0, std430) readonly buffer InBuffer { vec4 pixels[]; } src;
+layout(set = 0, binding = 1, std430) writeonly buffer OutBuffer { vec4 pixels[]; } dst;
+layout(set = 0, binding = 2, std430) readonly buffer ParamBuffer { float v[64]; } P;
+layout(set = 0, binding = 3, std430) readonly buffer PlaneBuffer { float v[]; } planes;   // haze a,b | base a,b | detail a,b
+layout(set = 0, binding = 4, std430) readonly buffer LutBuffer { float v[]; } luts;       // parametric[1025] | point[1025]
+layout(set = 0, binding = 5, std430) readonly buffer OriginBuffer { uvec2 tile[]; } origins;  // tile x, y per packed tile
+layout(push_constant) uniform Push { uint count; } push;
+
+const float kMidGrey = -2.4739312;
+const float kFloor = 1e-6;
+
+float smoothStep(float e0, float e1, float x) {
+    float t = clamp((x - e0) / (e1 - e0), 0.0, 1.0);
+    return t * t * (3.0 - 2.0 * t);
+}
+
+float lum(vec3 c) { return P.v[13] * c.r + P.v[14] * c.g + P.v[15] * c.b; }
+
+// Bilinear sample of plane `which` (0..5) at plane coordinates (pixel centres at integer + 0.5), edges clamped.
+float samplePlane(int which, vec2 p) {
+    int w = int(P.v[0]), h = int(P.v[1]);
+    int base = which * w * h;
+    float fx = clamp(p.x - 0.5, 0.0, float(w - 1));
+    float fy = clamp(p.y - 0.5, 0.0, float(h - 1));
+    int x0 = int(fx), y0 = int(fy);
+    int x1 = min(w - 1, x0 + 1), y1 = min(h - 1, y0 + 1);
+    float ax = fx - float(x0), ay = fy - float(y0);
+    float a00 = planes.v[base + y0 * w + x0], a10 = planes.v[base + y0 * w + x1];
+    float a01 = planes.v[base + y1 * w + x0], a11 = planes.v[base + y1 * w + x1];
+    return (1.0 - ay) * ((1.0 - ax) * a00 + ax * a10) + ay * ((1.0 - ax) * a01 + ax * a11);
+}
+
+float lutAt(int offset, float v) {
+    float x = clamp(v, 0.0, 1.0) * 1024.0;
+    int i = min(int(x), 1023);
+    float f = x - float(i);
+    return luts.v[offset + i] + (luts.v[offset + i + 1] - luts.v[offset + i]) * f;
+}
+
+float contrastCurve(float l, float contrast) {
+    if (contrast == 0.0) return l;
+    float s = exp2(contrast / 100.0);
+    float x = (l - kMidGrey) / 4.0, ax = abs(x);
+    float y = ax <= 1.0 ? x * s / (1.0 + (s - 1.0) * ax) : sign(x) * (1.0 + (ax - 1.0) / s);
+    return kMidGrey + 4.0 * y;
+}
+
+void main() {
+    uint index = gl_GlobalInvocationID.y * (gl_NumWorkGroups.x * 256u) + gl_GlobalInvocationID.x;
+    if (index >= push.count) return;
+    uint tileIndex = index >> 16u, local = index & 65535u;
+    uvec2 o = origins.tile[tileIndex];
+    float X = float(o.x * 256u + (local & 255u)), Y = float(o.y * 256u + (local >> 8u));
+    vec4 in4 = src.pixels[index];
+    vec3 px = max(in4.rgb, vec3(0.0));
+    float scale = P.v[2];
+    vec2 g = vec2(X + 0.5, Y + 0.5) * scale;
+    float dehaze = P.v[3];
+    if (P.v[19] != 0.0) {
+        float perceptual = pow(max(lum(px), 0.0), 1.0 / 2.2);
+        float tr = max(0.1, samplePlane(0, g) * perceptual + samplePlane(1, g));
+        vec3 air = vec3(P.v[16], P.v[17], P.v[18]);
+        px = max(vec3(0.0), (px - air) / tr + air);
+    } else if (dehaze < 0.0) {
+        float amount = -dehaze / 100.0 * 0.5;
+        px += (vec3(0.35) - px) * amount;
+    }
+    px *= exp2(P.v[4]);
+    float l0 = log2(max(kFloor, lum(px)));
+    float l = l0;
+    if (P.v[20] != 0.0) {
+        float b = samplePlane(2, g) * l0 + samplePlane(3, g) - kMidGrey;
+        float wShadow = 1.0 / (1.0 + exp(1.5 * (b + 1.5)));
+        float wHighlight = 1.0 / (1.0 + exp(-1.5 * (b - 1.0)));
+        l += 1.5 * (P.v[8] / 100.0 * wShadow + P.v[9] / 100.0 * wHighlight);
+    }
+    if (P.v[21] != 0.0) {
+        float d = l0 - (samplePlane(4, g) * l0 + samplePlane(5, g));
+        float t = (l0 - kMidGrey) / 2.5;
+        l += 0.7 * P.v[10] / 100.0 * d * exp(-t * t);
+    }
+    l = contrastCurve(l, P.v[5]);
+    l += P.v[6] / 100.0 * smoothStep(kMidGrey + 0.5, kMidGrey + 2.5, l);
+    l += P.v[7] / 100.0 * (1.0 - smoothStep(kMidGrey - 6.0, kMidGrey - 3.0, l));
+    if (l != l0) px *= exp2(l - l0);
+    if (P.v[22] != 0.0 || P.v[23] != 0.0) {
+        float y = lum(px);
+        if (y > 0.0 && y < 1.0) {
+            float v = pow(y, 1.0 / 2.2);
+            if (P.v[22] != 0.0) v = lutAt(0, v);
+            if (P.v[23] != 0.0) v = lutAt(1025, v);
+            float k = pow(max(v, 0.0), 2.2) / y;
+            px *= k;
+        }
+    }
+    float vibrance = P.v[11], saturation = P.v[12];
+    if (vibrance != 0.0 || saturation != 0.0) {
+        float y = lum(px);
+        float hi = max(px.r, max(px.g, px.b)), lo = min(px.r, min(px.g, px.b));
+        float sat = hi > 0.0 ? (hi - lo) / hi : 0.0;
+        float factor = max(0.0, 1.0 + saturation / 100.0 + vibrance / 100.0 * (1.0 - sat));
+        px = max(vec3(0.0), vec3(y) + (px - vec3(y)) * factor);
+    }
+    dst.pixels[index] = vec4(px, in4.a);
+}

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Back up preferences (theme, keymap, workspaces) only. Documents, caches, scratch and recovery journals are large and device-local; the agent pairing token (croptop_device) never leaves the device. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <include domain="file" path="datastore/" />
+        <exclude domain="file" path="datastore/croptop_device.preferences_pb" />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="file" path="datastore/" />
+        <exclude domain="file" path="datastore/croptop_device.preferences_pb" />
+    </device-transfer>
+</data-extraction-rules>

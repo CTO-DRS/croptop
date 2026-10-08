@@ -1,0 +1,111 @@
+#version 450
+// GPU port of develop::applyColor (develop_color.cpp): calibration matrix → Oklab → tint, mixer/look, mono →
+// three-way grading → back. Parameters come from develop::ColorPlan flattened into `Params` (see develop_color_gpu.cpp for the layout).
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+layout(set = 0, binding = 0, std430) readonly buffer InBuffer { vec4 pixels[]; } src;
+layout(set = 0, binding = 1, std430) writeonly buffer OutBuffer { vec4 pixels[]; } dst;
+layout(set = 0, binding = 2, std430) readonly buffer ParamBuffer { float v[64]; } P;
+layout(push_constant) uniform Push { uint count; } push;
+
+const float kPi = 3.14159265358979323846;
+
+float cbrtf(float x) { return x < 0.0 ? -pow(-x, 1.0 / 3.0) : pow(x, 1.0 / 3.0); }
+
+vec3 toOklab(vec3 c) {
+    float l = cbrtf(0.4122214708 * c.r + 0.5363325363 * c.g + 0.0514459929 * c.b);
+    float m = cbrtf(0.2119034982 * c.r + 0.6806995451 * c.g + 0.1073969566 * c.b);
+    float s = cbrtf(0.0883024619 * c.r + 0.2817188376 * c.g + 0.6299787005 * c.b);
+    return vec3(0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s,
+                1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
+                0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s);
+}
+
+vec3 fromOklab(vec3 c) {
+    float l = c.x + 0.3963377774 * c.y + 0.2158037573 * c.z;
+    float m = c.x - 0.1055613458 * c.y - 0.0638541728 * c.z;
+    float s = c.x - 0.0894841775 * c.y - 1.2914855480 * c.z;
+    float l3 = l * l * l, m3 = m * m * m, s3 = s * s * s;
+    return vec3(4.0767416621 * l3 - 3.3077115913 * m3 + 0.2309699292 * s3,
+                -1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3,
+                -0.0041960863 * l3 - 0.7034186147 * m3 + 1.7076147010 * s3);
+}
+
+vec3 mat3Row(int base, vec3 v) {
+    return vec3(P.v[base] * v.x + P.v[base + 1] * v.y + P.v[base + 2] * v.z,
+                P.v[base + 3] * v.x + P.v[base + 4] * v.y + P.v[base + 5] * v.z,
+                P.v[base + 6] * v.x + P.v[base + 7] * v.y + P.v[base + 8] * v.z);
+}
+
+const float kCentres[8] = float[8](25.0, 55.0, 100.0, 140.0, 195.0, 255.0, 295.0, 335.0);
+
+void rangeWeights(float hueDegrees, out float w[8]) {
+    for (int i = 0; i < 8; ++i) w[i] = 0.0;
+    float h = mod(hueDegrees, 360.0);
+    if (h < 0.0) h += 360.0;
+    for (int i = 0; i < 8; ++i) {
+        float c0 = kCentres[i];
+        float c1 = kCentres[(i + 1) % 8];
+        if (c1 <= c0) c1 += 360.0;
+        float hh = h;
+        if (hh < c0) hh += 360.0;
+        if (hh >= c0 && hh <= c1) {
+            float t = (hh - c0) / (c1 - c0);
+            float cw = cos(t * kPi * 0.5);
+            w[i] = cw * cw;
+            w[(i + 1) % 8] = 1.0 - cw * cw;
+            break;
+        }
+    }
+}
+
+float smoothStep(float e0, float e1, float x) {
+    float t = clamp((x - e0) / (e1 - e0), 0.0, 1.0);
+    return t * t * (3.0 - 2.0 * t);
+}
+
+void main() {
+    uint index = gl_GlobalInvocationID.y * (gl_NumWorkGroups.x * 256u) + gl_GlobalInvocationID.x;
+    if (index >= push.count) return;
+    vec4 px = src.pixels[index];
+    vec3 rgb = mat3Row(0, px.rgb);
+    vec3 lab = toOklab(rgb);
+    float tint = P.v[22];
+    if (tint != 0.0) lab.y += tint * (1.0 - smoothStep(0.1, 0.5, lab.x));
+    float chroma = length(lab.yz);
+    float hue = atan(lab.z, lab.y) * 180.0 / kPi;
+    bool mixing = P.v[18] != 0.0, mono = P.v[20] != 0.0;
+    if (mixing && chroma > 1e-6) {
+        float w[8];
+        rangeWeights(hue, w);
+        float dh = 0.0, ds = 0.0, dl = 0.0;
+        for (int i = 0; i < 8; ++i) {
+            dh += w[i] * P.v[26 + i];
+            ds += w[i] * P.v[34 + i];
+            dl += w[i] * P.v[42 + i];
+        }
+        float strength = min(1.0, chroma / 0.05);
+        hue += dh / 100.0 * 30.0;
+        chroma *= max(0.0, 1.0 + ds / 100.0 * strength) * P.v[21];
+        lab.x += dl / 100.0 * 0.12 * strength;
+        if (mono) chroma = 0.0;
+    } else if (mono) {
+        chroma = 0.0;
+    }
+    float angle = hue * kPi / 180.0;
+    lab.y = chroma * cos(angle);
+    lab.z = chroma * sin(angle);
+    if (P.v[19] != 0.0) {
+        float split = P.v[23], spread = P.v[24];
+        float wShadow = 1.0 - smoothStep(split - spread, split, lab.x);
+        float wHighlight = smoothStep(split, split + spread, lab.x);
+        float wMid = max(0.0, 1.0 - wShadow - wHighlight);
+        for (int k = 0; k < 3; ++k) {
+            float d = wShadow * P.v[50 + k] + wMid * P.v[53 + k] + wHighlight * P.v[56 + k] + P.v[59 + k];
+            lab[k] += d;
+        }
+    }
+    vec3 back = mat3Row(9, fromOklab(lab));
+    if (P.v[25] != 0.0) back = max(back, vec3(0.0));
+    dst.pixels[index] = vec4(back, px.a);
+}

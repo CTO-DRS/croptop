@@ -1,0 +1,10 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity
+            android:name="app.croptop.feature.editor.canvas.CanvasViewportGestureTestActivity"
+            android:exported="false" />
+        <activity
+            android:name="app.croptop.feature.editor.panels.LayersPanelPerformanceActivity"
+            android:exported="false" />
+    </application>
+</manifest>

@@ -1,0 +1,31 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <provider
+            android:name="app.croptop.core.engine.BlockingExportDocumentsProvider"
+            android:authorities="${applicationId}.blocking-export-test"
+            android:exported="true"
+            android:grantUriPermissions="true" />
+        <provider
+            android:name="app.croptop.core.engine.RawSidecarDocumentsProvider"
+            android:authorities="${applicationId}.raw-sidecar-test"
+            android:exported="true"
+            android:grantUriPermissions="true"
+            android:permission="android.permission.MANAGE_DOCUMENTS">
+            <intent-filter>
+                <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
+            </intent-filter>
+        </provider>
+        <activity
+            android:name="app.croptop.core.engine.NativeCanvasVulkanSmokeActivity"
+            android:exported="false" />
+        <activity
+            android:name="app.croptop.core.engine.NativeVulkanFrameBridgeSmokeActivity"
+            android:exported="false" />
+        <activity
+            android:name="app.croptop.core.engine.NativeDocumentViewportVulkanSmokeActivity"
+            android:exported="false" />
+        <activity
+            android:name="app.croptop.core.engine.HardwareCanvasTeardownSmokeActivity"
+            android:exported="false" />
+    </application>
+</manifest>
