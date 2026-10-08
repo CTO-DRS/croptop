@@ -117,6 +117,9 @@ private fun PanelMenuButton(
     }
 }
 
+private val LAYERS_MIN_HEIGHT = 200.dp
+private val MIN_PANEL_CAP = 96.dp
+
 /** Right dock: visible, docked panels in workspace order; Layers (if expanded) takes the remaining height. */
 @Composable
 fun DockColumn(
@@ -130,7 +133,11 @@ fun DockColumn(
     androidx.compose.foundation.layout.BoxWithConstraints(modifier.background(Ae.colors.surface1)) {
         // Tall panels (Character, Brush Settings…) scroll inside a capped height instead of pushing
         // the panels below them off the dock.
-        val cap = maxHeight * 0.6f
+        val layersExpanded = docked.any { it.panel == DockPanel.LAYERS && it.expanded }
+        val others = docked.count { it.expanded && it.panel != DockPanel.LAYERS }.coerceAtLeast(1)
+        // Layers keeps a usable height (its buttons sit at the bottom): the other expanded panels share what is left.
+        val shared = if (layersExpanded) (maxHeight - LAYERS_MIN_HEIGHT) / others else maxHeight
+        val cap = minOf(maxHeight * 0.6f, maxOf(shared, MIN_PANEL_CAP))
         Column(Modifier.fillMaxSize()) {
             docked.forEach { st ->
                 val grow = st.panel == DockPanel.LAYERS && st.expanded

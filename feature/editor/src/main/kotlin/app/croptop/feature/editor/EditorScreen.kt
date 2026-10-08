@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
@@ -1604,6 +1605,17 @@ fun EditorContent(
             val chromeHidden = panelsHidden || screenMode == 2
             if (!chromeHidden) AeDivider()
             if (!chromeHidden) {
+                val target = state.primaryLayer
+                val targetLabel = when {
+                    editingSelectionMask -> "Editing selection mask"
+                    target == null -> "No layer selected"
+                    maskTarget == target.id && target.mask != null -> "Editing mask · ${target.name}"
+                    target.kind == app.croptop.core.model.LayerKind.PIXEL -> "Editing pixels · ${target.name}"
+                    target.kind == app.croptop.core.model.LayerKind.SMART_OBJECT -> "Embedded content · ${target.name}"
+                    else -> "${target.kind.name.lowercase().replaceFirstChar(Char::uppercase)} · ${target.name}"
+                }
+                val editPixels: (() -> Unit)? =
+                    if (!editingSelectionMask && target != null && maskTarget == target.id && target.mask != null) ({ vm.targetPixels(target.id) }) else null
                 OptionsBar(
                     tool,
                     activeController,
@@ -1612,32 +1624,11 @@ fun EditorContent(
                     brushUi,
                     transforming = transform != null || colorRange != null,
                     paintingMask = maskTarget != null && maskTarget == state.primary && state.primaryLayer?.mask != null,
+                    targetLabel = targetLabel,
+                    onEditPixels = editPixels,
                     onActionCompleted = vm::reportUiActionCompleted,
                     onViewport = { viewport = it },
                 )
-            }
-            if (!chromeHidden) {
-                val target = state.primaryLayer
-                Row(
-                    Modifier.fillMaxWidth().heightIn(min = Ae.density.controlHeight + 8.dp).background(Ae.colors.surface2).padding(horizontal = 12.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    val targetLabel = when {
-                        editingSelectionMask -> "Editing selection mask"
-                        target == null -> "No layer selected"
-                        maskTarget == target.id && target.mask != null -> "Editing mask · ${target.name}"
-                        target.kind == app.croptop.core.model.LayerKind.PIXEL -> "Editing pixels · ${target.name}"
-                        target.kind == app.croptop.core.model.LayerKind.SMART_OBJECT -> "Embedded content · ${target.name}"
-                        else -> "${target.kind.name.lowercase().replaceFirstChar(Char::uppercase)} · ${target.name}"
-                    }
-                    app.croptop.core.designsystem.component.AeText(
-                        targetLabel, style = Ae.type.caption, modifier = Modifier.weight(1f), maxLines = 1,
-                    )
-                    if (!editingSelectionMask && target != null && maskTarget == target.id && target.mask != null) {
-                        app.croptop.core.designsystem.component.AeButton("Edit pixels", { vm.targetPixels(target.id) })
-                    }
-                }
             }
             if (!chromeHidden) AeDivider()
             val panelContent: PanelContent = { p ->
@@ -2682,6 +2673,8 @@ private fun OptionsBar(
     brush: app.croptop.feature.editor.brush.BrushUi,
     transforming: Boolean = false,
     paintingMask: Boolean = false,
+    targetLabel: String = "",
+    onEditPixels: (() -> Unit)? = null,
     onActionCompleted: (String) -> Unit,
     onViewport: (ViewportState) -> Unit,
 ) {
@@ -2718,6 +2711,12 @@ private fun OptionsBar(
 
             else -> AeText("This tool is coming soon.", style = Ae.type.caption, color = Ae.colors.textTertiary)
         }
+        }
+        // What the next edit lands on (pixels, a mask, embedded content), at the bar's far end instead of a row of its own.
+        if (targetLabel.isNotEmpty()) {
+            androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+            AeText(targetLabel, style = Ae.type.caption, color = Ae.colors.textSecondary, maxLines = 1, modifier = Modifier.widthIn(max = 260.dp))
+            if (onEditPixels != null) AeButton("Edit pixels", onEditPixels)
         }
     }
 }
