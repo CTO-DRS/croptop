@@ -1,0 +1,48 @@
+name: CTO-DRS Build (CropTop)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+env:
+  GRADLE_OPTS: -Dorg.gradle.daemon=false
+  ANDROID_PLATFORM: "platforms;android-37.0"
+  ANDROID_BUILD_TOOLS: "build-tools;36.1.0"
+  ANDROID_NDK: "ndk;27.1.12297006"
+  ANDROID_CMAKE: "cmake;3.22.1"
+
+jobs:
+  contract:
+    name: Kotlin contract tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-android
+      - name: Contract & model tests
+        run: ./gradlew :core:model:test :core:engine-api:testDebugUnitTest :core:engine-fake:testDebugUnitTest :core:input:testDebugUnitTest
+
+  packaging-full:
+    name: Assemble full (x86_64, native engine)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-android
+        with:
+          native: "true"
+      - name: Assemble full (x86_64)
+        run: ./gradlew :app:assembleFullDebug -Pcroptop.abi=x86_64
+      - name: Verify APK ABI + native lib
+        run: |
+          apk=$(ls app/build/outputs/apk/full/debug/*.apk)
+          unzip -l "$apk" | grep -q "lib/x86_64/" || { echo "missing lib/x86_64 in $apk"; exit 1; }
+          unzip -o -q "$apk" "lib/x86_64/libcroptop.so" -d apk-libs
+          bash core/engine/src/main/cpp/check_elf_alignment.sh "apk-libs/lib/x86_64/libcroptop.so"
+          ls -lh "$apk" apk-libs/lib/x86_64/libcroptop.so
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk-full-x86_64
+          path: app/build/outputs/apk/full/debug/*.apk
+          if-no-files-found: error
