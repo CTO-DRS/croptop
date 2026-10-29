@@ -17,7 +17,7 @@ runs:
     - name: Install SDK packages
       shell: bash
       run: |
-        yes | sdkmanager --licenses > /dev/null
+        yes | sdkmanager --licenses > /dev/null || true
         pkgs="$ANDROID_PLATFORM $ANDROID_BUILD_TOOLS platform-tools"
         if [ "${{ inputs.native }}" = "true" ]; then pkgs="$pkgs $ANDROID_NDK $ANDROID_CMAKE"; fi
         sdkmanager $pkgs > /dev/null
